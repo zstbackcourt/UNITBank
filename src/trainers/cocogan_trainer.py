@@ -39,7 +39,8 @@ class COCOGANTrainer(nn.Module):
 
     def gen_update(self, images_a, images_b, hyperparameters, a, b):
         self.gen.zero_grad()
-        x_ab, shared      = self.gen(images_a, a, b)
+        x_aa, shared_aa   = self.gen(images_a, a, a)
+        x_ab, shared_ab   = self.gen(images_a, a, b)
         x_aba, shared_aba = self.gen(x_ab, b, a)
         outs_b            = self.dis(x_ab, b)
         for it, (out_b, ) in enumerate(itertools.izip(outs_b)):
@@ -50,20 +51,25 @@ class COCOGANTrainer(nn.Module):
             else:
                 ad_loss_b += nn.functional.binary_cross_entropy(outputs_b, all_ones)
 
-        enc_loss = self._compute_kl(shared)
+        enc_aa_loss  = self._compute_kl(shared_aa)
+        enc_ab_loss  = self._compute_kl(shared_ab)
         enc_aba_loss = self._compute_kl(shared_aba)
 
         ll_loss_aba  = self.L1Loss(x_aba, images_a)
+        ll_loss_aa   = self.L1Loss(x_aa,  images_a)
 
         total_loss = hyperparameters['gan_w'] * (ad_loss_b) + \
+                     hyperparameters['ll_direct_link_w'] * (ll_loss_aa) + \
                      hyperparameters['ll_cycle_link_w'] * (ll_loss_aba) + \
-                     hyperparameters['kl_direct_link_w'] * (enc_loss) + \
+                     hyperparameters['kl_direct_link_w'] * (enc_aa_loss + enc_ab_loss) + \
                      hyperparameters['kl_cycle_link_w'] * (enc_aba_loss)
         total_loss.backward()
         self.gen_opt.step()
-        self.gen_enc_loss     = enc_loss.data.cpu().numpy()[0]
+        self.gen_enc_aa_loss  = enc_aa_loss.data.cpu().numpy()[0]
+        self.gen_enc_ab_loss  = enc_ab_loss.data.cpu().numpy()[0]
         self.gen_enc_aba_loss = enc_aba_loss.data.cpu().numpy()[0]
         self.gen_ad_loss_b    = ad_loss_b.data.cpu().numpy()[0]
+        self.gen_ll_loss_aa   = ll_loss_aa.data.cpu().numpy()[0]
         self.gen_ll_loss_aba  = ll_loss_aba.data.cpu().numpy()[0]
         self.gen_total_loss   = total_loss.data.cpu().numpy()[0]
         return x_ab, x_aba
@@ -93,25 +99,6 @@ class COCOGANTrainer(nn.Module):
         loss.backward()
         self.dis_opt.step()
         self.dis_loss = loss.data.cpu().numpy()[0]
-        return
-        
-    def vae_update(self, images_a, images_b, hyperparameters, a, b):
-        # a == b
-        assert(a == b)
-        self.gen.zero_grad()
-        x_ab, shared      = self.gen(images_a, a, b)
-
-        enc_loss     = self._compute_kl(shared)
-        ll_loss_b    = self.L1Loss(x_ab, images_b)
-
-        total_loss = hyperparameters['ll_direct_link_w'] * (ll_loss_b) + \
-                     hyperparameters['kl_direct_link_w'] * (enc_loss) 
-
-        total_loss.backward()
-        self.gen_opt.step()
-        self.vae_enc_loss     = enc_loss.data.cpu().numpy()[0]
-        self.vae_ll_loss_b    = ll_loss_b.data.cpu().numpy()[0]
-        self.vae_total_loss   = total_loss.data.cpu().numpy()[0]
         return
 
     def assemble_outputs(self, images_a, images_b, network_outputs):

@@ -58,35 +58,41 @@ def main(argv):
                 images_list.append(im)
                 #print('im shape = ', im.size())
 
+            assembled_list = []
             for i in xrange(domain_number):
                 for j in xrange(domain_number):
                     # first:  all of them VAE pass
                     if i == j:
-                        trainer.vae_update(images_list[i], images_list[j], config.hyperparameters, i, j)
+                        continue
+                        #trainer.vae_update(images_list[i], images_list[j], config.hyperparameters, i, j)
                     # second: all crossing pairs for GAN, let the lambda judge the 
                     else: # i != j
                         trainer.dis_update(images_list[i], images_list[j], config.hyperparameters, i, j)
                         image_outputs = trainer.gen_update(images_list[i], images_list[j], config.hyperparameters, i, j)
 
-                        assembled_images = trainer.assemble_outputs(images_list[i], images_list[j], image_outputs)
+                        assembled = trainer.assemble_outputs(images_list[i], images_list[j], image_outputs)
+                        assembled_list.append(assembled)
 
-                        # Dump training stats in log file
-                        if (iterations + 1) % config.display == 0:
-                            write_loss(iterations, max_iterations, trainer, train_writer)
-                        if (iterations + 1) % config.image_save_iterations == 0:
-                            img_filename = '%s/gen_%08d.jpg' % (image_directory, iterations + 1)
-                            torchvision.utils.save_image(assembled_images.data / 2 + 0.5, img_filename, nrow = 1)
-                            write_html(snapshot_directory + '/index.html', iterations + 1, config.image_save_iterations, image_directory)
-                        elif (iterations + 1) % config.image_display_iterations == 0:
-                            img_filename = '%s/gen.jpg' % (image_directory)
-                            torchvision.utils.save_image(assembled_images.data / 2 + 0.5, img_filename, nrow = 1)
+            assembled_images = torch.cat(assembled_list, 2)
+            # Dump training stats in log file
 
-                        if (iterations + 1) % config.snapshot_save_iterations == 0:
-                            trainer.save(config.snapshot_prefix, iterations)
+            for t in xrange(domain_number * domain_number - domain_number):
+                if (iterations + 1) % config.display == 0:
+                    write_loss(iterations, max_iterations, trainer, train_writer)
+                if (iterations + 1) % config.image_save_iterations == 0:
+                    img_filename = '%s/gen_%08d.jpg' % (image_directory, iterations + 1)
+                    torchvision.utils.save_image(assembled_images.data / 2 + 0.5, img_filename, nrow = 1)
+                    write_html(snapshot_directory + '/index.html', iterations + 1, config.image_save_iterations, image_directory)
+                elif (iterations + 1) % config.image_display_iterations == 0:
+                    img_filename = '%s/gen.jpg' % (image_directory)
+                    torchvision.utils.save_image(assembled_images.data / 2 + 0.5, img_filename, nrow = 1)
 
-                        iterations += 1
-                        if iterations >= max_iterations:
-                            return
+                if (iterations + 1) % config.snapshot_save_iterations == 0:
+                    trainer.save(config.snapshot_prefix, iterations)
+
+                iterations += 1
+                if iterations >= max_iterations:
+                    return
 
 if __name__ == '__main__':
     main(sys.argv)
